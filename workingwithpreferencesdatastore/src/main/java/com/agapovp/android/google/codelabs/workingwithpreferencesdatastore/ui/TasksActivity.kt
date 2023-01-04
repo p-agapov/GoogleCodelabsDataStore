@@ -1,13 +1,25 @@
 package com.agapovp.android.google.codelabs.workingwithpreferencesdatastore.ui
 
+import android.content.Context
 import android.os.Bundle
 import androidx.appcompat.app.AppCompatActivity
+import androidx.datastore.preferences.SharedPreferencesMigration
+import androidx.datastore.preferences.preferencesDataStore
 import androidx.lifecycle.ViewModelProvider
 import androidx.recyclerview.widget.DividerItemDecoration
 import com.agapovp.android.google.codelabs.workingwithpreferencesdatastore.data.SortOrder
 import com.agapovp.android.google.codelabs.workingwithpreferencesdatastore.data.TasksRepository
 import com.agapovp.android.google.codelabs.workingwithpreferencesdatastore.data.UserPreferencesRepository
 import com.agapovp.android.google.codelabs.workingwithpreferencesdatastore.databinding.ActivityTasksBinding
+
+private const val USER_PREFERENCES_NAME = "user_preferences"
+
+private val Context.dataStore by preferencesDataStore(
+    name = USER_PREFERENCES_NAME,
+    produceMigrations = { context ->
+        listOf(SharedPreferencesMigration(context, USER_PREFERENCES_NAME))
+    }
+)
 
 class TasksActivity : AppCompatActivity() {
 
@@ -24,23 +36,25 @@ class TasksActivity : AppCompatActivity() {
 
         viewModel = ViewModelProvider(
             this,
-            TasksViewModelFactory(TasksRepository, UserPreferencesRepository.getInstance(this))
-        )[TasksViewModel::class.java]
+            TasksViewModelFactory(
+                TasksRepository,
+                UserPreferencesRepository(dataStore)
+            )
+        )[(TasksViewModel::class.java)]
 
         setupRecyclerView()
-        setupFilterListeners(viewModel)
-        setupSort()
 
-        viewModel.tasksUiModel.observe(this) { tasksUiModel ->
-            adapter.submitList(tasksUiModel.tasks)
-            updateSort(tasksUiModel.sortOrder)
-            binding.showCompletedSwitch.isChecked = tasksUiModel.showCompleted
+        viewModel.initialSetupEvent.observe(this) { initialSetupEvent ->
+            updateTaskFilters(initialSetupEvent.sortOrder, initialSetupEvent.showCompleted)
+            setupOnCheckedChangeListeners()
+            observePreferenceChanges()
         }
     }
 
-    private fun setupFilterListeners(viewModel: TasksViewModel) {
-        binding.showCompletedSwitch.setOnCheckedChangeListener { _, checked ->
-            viewModel.showCompletedTasks(checked)
+    private fun observePreferenceChanges() {
+        viewModel.tasksUiModel.observe(this) { tasksUiModel ->
+            adapter.submitList(tasksUiModel.tasks)
+            updateTaskFilters(tasksUiModel.sortOrder, tasksUiModel.showCompleted)
         }
     }
 
@@ -52,19 +66,25 @@ class TasksActivity : AppCompatActivity() {
         binding.list.adapter = adapter
     }
 
-    private fun setupSort() {
+    private fun setupOnCheckedChangeListeners() {
         binding.sortDeadline.setOnCheckedChangeListener { _, checked ->
             viewModel.enableSortByDeadline(checked)
         }
         binding.sortPriority.setOnCheckedChangeListener { _, checked ->
             viewModel.enableSortByPriority(checked)
         }
+        binding.showCompletedSwitch.setOnCheckedChangeListener { _, checked ->
+            viewModel.showCompletedTasks(checked)
+        }
     }
 
-    private fun updateSort(sortOrder: SortOrder) {
-        binding.sortDeadline.isChecked =
-            sortOrder == SortOrder.BY_DEADLINE || sortOrder == SortOrder.BY_DEADLINE_AND_PRIORITY
-        binding.sortPriority.isChecked =
-            sortOrder == SortOrder.BY_PRIORITY || sortOrder == SortOrder.BY_DEADLINE_AND_PRIORITY
+    private fun updateTaskFilters(sortOrder: SortOrder, showCompleted: Boolean) {
+        with(binding) {
+            showCompletedSwitch.isChecked = showCompleted
+            sortDeadline.isChecked =
+                sortOrder == SortOrder.BY_DEADLINE || sortOrder == SortOrder.BY_DEADLINE_AND_PRIORITY
+            sortPriority.isChecked =
+                sortOrder == SortOrder.BY_PRIORITY || sortOrder == SortOrder.BY_DEADLINE_AND_PRIORITY
+        }
     }
 }
